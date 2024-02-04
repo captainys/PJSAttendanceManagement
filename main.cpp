@@ -176,8 +176,16 @@ int main(int argc,char *argv[])
 				}
 
 
-				std::string data = 
-					detector.detectAndDecode(frame[i], bbox, rectifiedImage);
+				std::string data;
+				try
+				{
+					data=detector.detectAndDecode(frame[i], bbox, rectifiedImage);
+				}
+				catch(cv::Exception &e)
+				{
+					std::cout << e.msg << std::endl;
+					data.clear();
+				}
 				if (0 < data.size())
 				{
 					std::cout << "Found:" << data << std::endl;
