@@ -1,3 +1,8 @@
+#define _CRT_SECURE_NO_WARNINGS
+
+#include <time.h>
+#include <ctype.h>
+#include <fstream>
 
 #include "fssimplewindow.h"
 #include "ysglfontdata.h"
@@ -35,8 +40,54 @@ bool OnCloseWindow(void *ptr)
 	return false;
 }
 
-int main(void)
+
+class CommandParameterInfo
 {
+public:
+	std::string storeDir="./Attendance";
+
+	bool RecognizeCommandParameters(int ac,char *av[])
+	{
+		for(int i=1; i<ac; ++i)
+		{
+			std::string OPT=av[i];
+			for(auto &c : OPT)
+			{
+				c=toupper(c);
+			}
+			if("-STOREDIR"==av[i])
+			{
+				if(i+1<ac)
+				{
+					storeDir=av[i+1];
+					++i;
+				}
+				else
+				{
+					fprintf(stderr,"Too few arguments for parameter %s\n",av[i]);
+					return false;
+				}
+			}
+			else
+			{
+				fprintf(stderr,"Unrecognized parameter %s\n",av[i]);
+				return false;
+			}
+		}
+		return true;
+	}
+};
+
+int main(int argc,char *argv[])
+{
+	CommandParameterInfo cpi;
+	if(true!=cpi.RecognizeCommandParameters(argc,argv))
+	{
+		fprintf(stderr,"Command-parameter error.\n");
+		return 1;
+	}
+
+
 	const int MAX_NUM_VIDEO = 1;
 	cv::VideoCapture* capPtr[MAX_NUM_VIDEO];
 	cv::Mat frame[MAX_NUM_VIDEO];
@@ -65,8 +116,10 @@ int main(void)
 	const unsigned int ACTION_LEAVE = 1;
 	int action = ACTION_ENTER;
 
-	bool qrCodeDetected = false;
+	bool qrCodeDetected = false,errorOccured=false;
 	std::string prevQrCode;
+
+	std::string message;
 
 	unsigned int closeWindowSignal = 0;
 	FsRegisterCloseWindowCallBack(OnCloseWindow, &closeWindowSignal);
@@ -103,8 +156,7 @@ int main(void)
 			if (capPtr[i]->isOpened())
 			{
 				(*capPtr[i]) >> frame[i];
-				printf("Yes! [%d]\n", i);
-				printf("%d x %d\n", frame[i].size[0], frame[i].size[1]);
+				printf("video %d: %d x %d\n", i, frame[i].size[0], frame[i].size[1]);
 
 				imgWid = frame[i].size[1];
 				imgHei = frame[i].size[0];
@@ -132,7 +184,56 @@ int main(void)
 					if (data != prevQrCode)
 					{
 						// Generate a file in the mapped Google drive folder here.
+
+						std::string output;
+						auto t=time(NULL);
+						auto tm=localtime(&t);
+
+						char fmt[256];
+						sprintf(fmt,"%04d%02d%02d_%02d%02d_",
+						   1900+tm->tm_year,
+						   1+tm->tm_mon,
+						   tm->tm_mday,
+						   tm->tm_hour,
+						   tm->tm_min);
+
+						output=fmt;
+						if(ACTION_ENTER==action)
+						{
+							output+="ENTER_";
+						}
+						else
+						{
+							output+="LEAVE_";
+						}
+
+						output+=data;
+
+						std::string fileName=cpi.storeDir;
+						if(0<fileName.size() && '/'!=fileName.back() && '\\'!=fileName.back())
+						{
+							fileName.push_back('/');
+						}
+						fileName+=output;
+
+						std::cout << fileName << std::endl;
+						std::ofstream ofp(fileName);
+						if(ofp.is_open())
+						{
+							ofp << output << std::endl;
+							ofp.close();
+							errorOccured=false;
+							message="Registered Enter/Leave Log for "+data;
+							std::cout << message << std::endl;
+						}
+						else
+						{
+							errorOccured=true;
+							message="ERROR!  Cannot Register Enter/Leave Log!";
+							std::cout << message << std::endl;
+						}
 					}
+
 					qrCodeDetected = true;
 					prevQrCode = data;
 				}
@@ -143,7 +244,14 @@ int main(void)
 
 				if (MODE1_SCAN_QR_CODE == mode && true == qrCodeDetected)
 				{
-					glClearColor(0, 1, 0, 0);
+					if(true==errorOccured)
+					{
+						glClearColor(1, 0, 0, 0);
+					}
+					else
+					{
+						glClearColor(0, 1, 0, 0);
+					}
 				}
 				else
 				{
@@ -154,6 +262,9 @@ int main(void)
 				{
 					glRasterPos2d(0, 599);
 					glDrawPixels(imgWid, imgHei, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+					std::cout << message << std::endl;
+					glRasterPos2i(0,32);
+					YsGlDrawFontBitmap20x28(message.data());
 				}
 				else
 				{
